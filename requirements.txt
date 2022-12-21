@@ -1,0 +1,11 @@
+black
+click
+Events
+minimalmodbus
+mypy-extensions
+paho-mqtt
+pathspec
+platformdirs
+pyserial
+tomli
+typing-extensions

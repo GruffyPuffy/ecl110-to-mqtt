@@ -1,0 +1,16 @@
+{
+    "loglevel": "WARNING",
+    "interval": 5.0,
+
+    "mqttbroker": "192.168.1.183",
+    "mqttport": 1883,
+    "mqttclientid": "ecl110-to-mqtt",
+
+    "mqttkeepalive": 60,
+    "mqttusername": "mqtt",
+    "mqttpassword": "mqtt",
+
+    "mqttbasetopic": "ecl110/",
+
+    "modbusport": "/dev/ttyS0"
+}
