@@ -127,6 +127,8 @@ class Ecl1102MQTT:
             print(f"address={self.bus.address}")
             print(f"mode={self.bus.mode}")
 
+            self.valvePosition = 0;
+
             last_data_json = ""
             last_cycle = 0.0
             while True:
@@ -141,8 +143,10 @@ class Ecl1102MQTT:
 
                     self.lock.acquire()
                     try:
+                        
                         data = {
                             "mode": self.__read_mode().name,
+
                             "temp_outdoor": self.__read_uint16(11200) / 10.0,
                             "temp_outdoor_accu": self.__read_uint16(11099)  / 10.0,
                             "temp_room": self.__read_uint(11201) / 10.0,
@@ -150,6 +154,10 @@ class Ecl1102MQTT:
                             "temp_flow_return": self.__read_uint(11203) / 10.0,
                             "temp_room_desired": self.__read_uint(11228) / 10.0,
                             "temp_flow_desired": self.__read_uint(11229) / 10.0,
+
+                            "valveOpen": self.__read_uint(4100),
+                            "valveClose": self.__read_uint(4101),
+                            "valvePosition": self.valvePosition,
 
                             # "monday_start1": self.__read_uint(1109),
                             # "monday_stop1": self.__read_uint(1110),
@@ -187,6 +195,17 @@ class Ecl1102MQTT:
                             # "sunday_stop2": self.__read_uint(1172),
 
                         }
+
+                        # Update / recalc valvePosition based on readings
+                        if data["valveOpen"] > 0:
+                            self.valvePosition =  self.valvePosition + 1
+                        if data["valveClose"] > 0:
+                            self.valvePosition =  self.valvePosition - 1
+                        if self.valvePosition < 0:
+                            self.valvePosition = 0
+                        
+                        data["valvePosition"] = self.valvePosition
+
                         data_json = json.dumps(data)
                         if data_json != last_data_json:
                             # print(data)
