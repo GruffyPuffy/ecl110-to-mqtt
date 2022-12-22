@@ -117,7 +117,7 @@ class Ecl1102MQTT:
             self.mqtt.subscribe_to("/register/write", self.__on_write_register)
             self.mqtt.subscribe_to("/register/read", self.__on_read_register)
 
-            self.bus = minimalmodbus.Instrument(args.modbusport, 1)
+            self.bus = minimalmodbus.Instrument(args.modbusport, 5)
             self.bus.serial.baudrate = 19200         # Baud
             self.bus.serial.bytesize = 8
             self.bus.serial.parity   = serial.PARITY_EVEN
@@ -143,13 +143,13 @@ class Ecl1102MQTT:
                     try:
                         data = {
                             "mode": self.__read_mode().name,
-                            "temp_outdoor": self.__read_uint16(11200),
-                            "temp_outdoor_accu": self.__read_uint16(11099),
-                            "temp_room": self.__read_uint(11201),
-                            "temp_flow": self.__read_uint(11202),
-                            "temp_flow_return": self.__read_uint(11203),
-                            "temp_room_desired": self.__read_uint(11228),
-                            "temp_flow_desired": self.__read_uint(11229),
+                            "temp_outdoor": self.__read_uint16(11200) / 10.0,
+                            "temp_outdoor_accu": self.__read_uint16(11099)  / 10.0,
+                            "temp_room": self.__read_uint(11201) / 10.0,
+                            "temp_flow": self.__read_uint(11202) / 10.0,
+                            "temp_flow_return": self.__read_uint(11203) / 10.0,
+                            "temp_room_desired": self.__read_uint(11228) / 10.0,
+                            "temp_flow_desired": self.__read_uint(11229) / 10.0,
 
                             # "monday_start1": self.__read_uint(1109),
                             # "monday_stop1": self.__read_uint(1110),
