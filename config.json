@@ -12,5 +12,5 @@
 
     "mqttbasetopic": "ecl110/",
 
-    "modbusport": "/dev/ttyS0"
+    "modbusport": "/dev/ttyUSB0"
 }
