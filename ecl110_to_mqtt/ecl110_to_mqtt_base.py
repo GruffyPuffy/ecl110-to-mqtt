@@ -20,8 +20,7 @@ DEFAULT_ARGS = {
     "interval": 5.0,
     "mqttport": 1883,
     "mqttkeepalive": 60,
-    "mqttbasetopic": "ecl110/",
-    
+   
     "modbusport": "/dev/ttyS0",
 }
 
@@ -55,6 +54,24 @@ class Ecl1102MQTT:
         if name in config:
             setattr(cmdArgs, name, config[name])
 
+    def _send_temperature_sensor_config(self, name, nice_name):
+            _config = {
+                "~": "ecl110/"+str(name),
+                "name": nice_name,
+                "state_topic": "ecl110/"+str(name)+"/value",
+                "unit_of_measurement": "°C",
+                "device": "ecl110",
+                "uniq_id": "ecl110-"+str(name),
+                "device_class": "temperature",
+                "availability": "ecl110/state"
+            }
+            print(_config)
+            self.mqtt.publish(
+                f"homeassistant/sensor/ecl110/{name}/config",
+                json.dumps(_config),
+                retain=True,
+            )
+
     async def run(self, loop: asyncio.AbstractEventLoop):
         self.loop = loop
         parser = argparse.ArgumentParser(prog="ecl110-to-mqtt", description="Commandline Interface to interact with ECL 110 Comfort regulator")
@@ -70,7 +87,6 @@ class Ecl1102MQTT:
         parser.add_argument("--mqtt-keepalive", type=int, dest="mqttkeepalive", help="Time between keep-alive messages", default=DEFAULT_ARGS["mqttkeepalive"])
         parser.add_argument("--mqtt-username", type=str, dest="mqttusername", help="Username for MQTT broker")
         parser.add_argument("--mqtt-password", type=str, dest="mqttpassword", help="Password for MQTT broker")
-        parser.add_argument("--mqtt-basetopic", type=str, dest="mqttbasetopic", help="Base topic of mqtt messages", default=DEFAULT_ARGS["mqttbasetopic"])
 
         parser.add_argument("--modbus-port", type=str, dest="modbusport", help="Modbus serial port", default=DEFAULT_ARGS["modbusport"])
 
@@ -88,7 +104,6 @@ class Ecl1102MQTT:
             self.__add_from_config(args, config, "mqttkeepalive")
             self.__add_from_config(args, config, "mqttusername")
             self.__add_from_config(args, config, "mqttpassword")
-            self.__add_from_config(args, config, "mqttbasetopic")
             self.__add_from_config(args, config, "modbusport")
 
         valid_loglevels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
@@ -111,11 +126,17 @@ class Ecl1102MQTT:
             return
 
         try:
-            self.mqtt = MqttClient(LOGGER, self.loop, args.mqttbroker, args.mqttport, args.mqttclientid, args.mqttkeepalive, args.mqttusername, args.mqttpassword, args.mqttbasetopic)
+            self.mqtt = MqttClient(LOGGER, self.loop, args.mqttbroker, args.mqttport, args.mqttclientid, args.mqttkeepalive, args.mqttusername, args.mqttpassword, "")
             await self.mqtt.start()
             self.mqtt.subscribe_to("/mode/set", self.__on_set_mode)
             self.mqtt.subscribe_to("/register/write", self.__on_write_register)
             self.mqtt.subscribe_to("/register/read", self.__on_read_register)
+
+
+            # Send Home-assistant config
+            #self._send_temperature_sensor_config("temp_outdoor", "Outdoor temperature")
+            #self.mqtt.publish("ecl110/state", "Online")
+
 
             self.bus = minimalmodbus.Instrument(args.modbusport, 5)
             self.bus.serial.baudrate = 19200         # Baud
@@ -131,6 +152,7 @@ class Ecl1102MQTT:
 
             last_data_json = ""
             last_cycle = 0.0
+
             while True:
                 await asyncio.sleep(max(0, args.interval - (time.time() - last_cycle)))
                 last_cycle = time.time()
@@ -145,54 +167,55 @@ class Ecl1102MQTT:
                     try:
                         
                         data = {
-                            "mode": self.__read_mode().name,
+                            "mode_desired": self.__read_mode().name,
+                            "mode": self.__read_uint16(4210),
 
-                            "temp_outdoor": self.__read_uint16(11200) / 10.0,
-                            "temp_outdoor_accu": self.__read_uint16(11099)  / 10.0,
-                            "temp_room": self.__read_uint(11201) / 10.0,
-                            "temp_flow": self.__read_uint(11202) / 10.0,
-                            "temp_flow_return": self.__read_uint(11203) / 10.0,
-                            "temp_room_desired": self.__read_uint(11228) / 10.0,
-                            "temp_flow_desired": self.__read_uint(11229) / 10.0,
+                            "temp_outdoor": self.__read_int16(11200) / 10.0,
+                            "temp_outdoor_accu": self.__read_int16(11099)  / 10.0,
+                            "temp_room": self.__read_int16(11201) / 10.0,
+                            "temp_flow": self.__read_int16(11202) / 10.0,
+                            "temp_flow_return": self.__read_int16(11203) / 10.0,
+                            "temp_room_desired": self.__read_int16(11228) / 10.0,
+                            "temp_flow_desired": self.__read_int16(11229) / 10.0,
 
-                            "valveOpen": self.__read_uint(4100),
-                            "valveClose": self.__read_uint(4101),
+                            "valveOpen": self.__read_uint16(4100),
+                            "valveClose": self.__read_uint16(4101),
                             "valvePosition": self.valvePosition,
 
-                            # "monday_start1": self.__read_uint(1109),
-                            # "monday_stop1": self.__read_uint(1110),
-                            # "monday_start2": self.__read_uint(1111),
-                            # "monday_stop2": self.__read_uint(1112),
+                            # "monday_start1": self.__read_uint16(1109),
+                            # "monday_stop1": self.__read_uint16(1110),
+                            # "monday_start2": self.__read_uint16(1111),
+                            # "monday_stop2": self.__read_uint16(1112),
 
-                            # "tuesday_start1": self.__read_uint(1119),
-                            # "tuesday_stop1": self.__read_uint(1120),
-                            # "tuesday_start2": self.__read_uint(1121),
-                            # "tuesday_stop2": self.__read_uint(1122),
+                            # "tuesday_start1": self.__read_uint16(1119),
+                            # "tuesday_stop1": self.__read_uint16(1120),
+                            # "tuesday_start2": self.__read_uint16(1121),
+                            # "tuesday_stop2": self.__read_uint16(1122),
 
-                            # "wednesday_start1": self.__read_uint(1129),
-                            # "wednesday_stop1": self.__read_uint(1130),
-                            # "wednesday_start2": self.__read_uint(1131),
-                            # "wednesday_stop2": self.__read_uint(1132),
+                            # "wednesday_start1": self.__read_uint16(1129),
+                            # "wednesday_stop1": self.__read_uint16(1130),
+                            # "wednesday_start2": self.__read_uint16(1131),
+                            # "wednesday_stop2": self.__read_uint16(1132),
 
-                            # "thursday_start1": self.__read_uint(1139),
-                            # "thursday_stop1": self.__read_uint(1140),
-                            # "thursday_start2": self.__read_uint(1141),
-                            # "thursday_stop2": self.__read_uint(1142),
+                            # "thursday_start1": self.__read_uint16(1139),
+                            # "thursday_stop1": self.__read_uint16(1140),
+                            # "thursday_start2": self.__read_uint16(1141),
+                            # "thursday_stop2": self.__read_uint16(1142),
 
-                            # "friday_start1": self.__read_uint(1149),
-                            # "friday_stop1": self.__read_uint(1150),
-                            # "friday_start2": self.__read_uint(1151),
-                            # "friday_stop2": self.__read_uint(1152),
+                            # "friday_start1": self.__read_uint16(1149),
+                            # "friday_stop1": self.__read_uint16(1150),
+                            # "friday_start2": self.__read_uint16(1151),
+                            # "friday_stop2": self.__read_uint16(1152),
 
-                            # "saturday_start1": self.__read_uint(1159),
-                            # "saturday_stop1": self.__read_uint(1160),
-                            # "saturday_start2": self.__read_uint(1161),
-                            # "saturday_stop2": self.__read_uint(1162),
+                            # "saturday_start1": self.__read_uint16(1159),
+                            # "saturday_stop1": self.__read_uint16(1160),
+                            # "saturday_start2": self.__read_uint16(1161),
+                            # "saturday_stop2": self.__read_uint16(1162),
 
-                            # "sunday_start1": self.__read_uint(1169),
-                            # "sunday_stop1": self.__read_uint(1170),
-                            # "sunday_start2": self.__read_uint(1171),
-                            # "sunday_stop2": self.__read_uint(1172),
+                            # "sunday_start1": self.__read_uint16(1169),
+                            # "sunday_stop1": self.__read_uint16(1170),
+                            # "sunday_start2": self.__read_uint16(1171),
+                            # "sunday_stop2": self.__read_uint16(1172),
 
                         }
 
@@ -208,8 +231,16 @@ class Ecl1102MQTT:
 
                         data_json = json.dumps(data)
                         if data_json != last_data_json:
-                            # print(data)
-                            self.mqtt.publish(f"live", data)
+                            print(last_cycle)
+                            print(data)
+                            self.mqtt.publish("ecl110/value", data)
+
+                            # for key in data:
+                            #     topic = f"ecl110/{key}/value"
+                            #     value = data[key]
+                            #     print(f"mqtt: {topic} - {value}")
+                            #     self.mqtt.publish(topic, value)
+
                             last_data_json = data_json
                     finally:
                         self.lock.release()
@@ -313,6 +344,9 @@ class Ecl1102MQTT:
 
     def __read_uint16(self, register_address: int):
         return self.bus.read_register(register_address)
+
+    def __read_int16(self, register_address: int):
+        return self.bus.read_register(register_address, signed=True)
 
     def __read_uint32(self, register_address: int):
         return self.bus.read_long(register_address)
