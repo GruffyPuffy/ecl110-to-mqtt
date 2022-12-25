@@ -128,9 +128,9 @@ class Ecl1102MQTT:
         try:
             self.mqtt = MqttClient(LOGGER, self.loop, args.mqttbroker, args.mqttport, args.mqttclientid, args.mqttkeepalive, args.mqttusername, args.mqttpassword, "")
             await self.mqtt.start()
-            self.mqtt.subscribe_to("/mode/set", self.__on_set_mode)
-            self.mqtt.subscribe_to("/register/write", self.__on_write_register)
-            self.mqtt.subscribe_to("/register/read", self.__on_read_register)
+            self.mqtt.subscribe_to("/ecl110/mode/set", self.__on_set_mode)
+            self.mqtt.subscribe_to("/ecl110/register/write", self.__on_write_register)
+            self.mqtt.subscribe_to("/ecl110/register/read", self.__on_read_register)
 
 
             # Send Home-assistant config
@@ -181,6 +181,24 @@ class Ecl1102MQTT:
                             "valveOpen": self.__read_uint16(4100),
                             "valveClose": self.__read_uint16(4101),
                             "valvePosition": self.valvePosition,
+
+                            #"auto_reduct": self.__read_int16(11010),
+                            #"boost": self.__read_int16(11011),
+                            #"ramp": self.__read_int16(11012),
+                            #"optimizer": self.__read_int16(11013),
+                            #"integration_time": self.__read_int16(11014),
+
+                            #"based_on_optimizer": self.__read_int16(11019),
+                            #"total_stop": self.__read_int16(11020),
+
+                            #"pump_exercise": self.__read_int16(11021),
+                            #"valve_exercise": self.__read_int16(11022),
+
+                            "slope": self.__read_int16(11174) / 10.0,
+                            "offset": self.__read_int16(11175),
+
+                            "comfort_desired_temp": self.__read_int16(11179),
+                            "setback_desired_temp": self.__read_int16(11180),
 
                             # "monday_start1": self.__read_uint16(1109),
                             # "monday_stop1": self.__read_uint16(1110),
@@ -260,6 +278,7 @@ class Ecl1102MQTT:
             LOGGER.info(f"shutdown requested")
             await self.mqtt.stop()
 
+    ## For ECL we assume SIGNED values
     def __on_write_register(self, client, userdata, msg):
         address = getattr(msg.payload, "address", None)
         if address == None:
@@ -270,9 +289,10 @@ class Ecl1102MQTT:
             LOGGER.error('no value for "value" provided')
             return
 
+        print(f"REQ WRITE: {address} = {value}")
         self.lock.acquire()
         try:
-            self.bus.write_register(address, value, functioncode=6)
+            self.bus.write_register(address, value, functioncode=6, signed=True)
         except minimalmodbus.NoResponseError:
             LOGGER.error("no response on ModBus")
         except minimalmodbus.InvalidResponseError:
@@ -280,6 +300,7 @@ class Ecl1102MQTT:
         finally:
             self.lock.release()
 
+    ## For ECL we assume SIGNED values
     def __on_read_register(self, client, userdata, msg):
         address = getattr(msg.payload, "address", None)
         if address == None:
@@ -288,7 +309,7 @@ class Ecl1102MQTT:
 
         self.lock.acquire()
         try:
-            value = self.bus.read_register(address)
+            value = self.bus.read_register(address, signed=True)
         except minimalmodbus.NoResponseError:
             LOGGER.error("no response on ModBus")
         except minimalmodbus.InvalidResponseError:
@@ -296,7 +317,8 @@ class Ecl1102MQTT:
         finally:
             self.lock.release()
 
-        self.mqtt.publish(f"register/{address}", value)
+        print(f"REQ READ: {address} = {value}")
+        self.mqtt.publish(f"ecl110/register/{address}", value)
 
     def __on_set_mode(self, client, userdata, msg):
         requested_mode = getattr(msg.payload, "mode", None)
