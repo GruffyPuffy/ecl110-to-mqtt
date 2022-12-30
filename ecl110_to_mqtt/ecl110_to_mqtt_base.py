@@ -36,10 +36,11 @@ def main():
 
 
 class Ecl110Mode(Enum):
-    auto = 0
-    comfort = 1
-    setback = 2
-    standby = 3
+    manual = 0
+    auto = 1
+    comfort = 2
+    setback = 3
+    standby = 4
     unknown = 255
 
 
@@ -167,8 +168,8 @@ class Ecl1102MQTT:
                     try:
                         
                         data = {
-                            "mode_desired": self.__read_mode().name,
-                            "mode": self.__read_uint16(4210),
+                            "mode_desired": self.__read_mode(4200).name,
+                            "mode": self.__read_mode(4210).name,
 
                             "temp_outdoor": self.__read_int16(11200) / 10.0,
                             "temp_outdoor_accu": self.__read_int16(11099)  / 10.0,
@@ -346,9 +347,11 @@ class Ecl1102MQTT:
         finally:
             self.lock.release()
 
-    def __read_mode(self) -> Ecl110Mode:
-        mode_val = self.__read_uint16(4200)
-        if mode_val == 1:
+    def __read_mode(self, address) -> Ecl110Mode:
+        mode_val = self.__read_uint16(address)
+        if mode_val == 0:
+            return Ecl110Mode.manual
+        elif mode_val == 1:
             return Ecl110Mode.auto
         elif mode_val == 2:
             return Ecl110Mode.comfort
