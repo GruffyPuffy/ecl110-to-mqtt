@@ -15,16 +15,6 @@ from .__mqtt import MqttClient
 
 LOGGER = logging.getLogger("ecl110-to-mqtt")
 
-DEFAULT_ARGS = {
-    "loglevel": "WARNING",
-    "interval": 5.0,
-    "mqttport": 1883,
-    "mqttkeepalive": 60,
-   
-    "modbusport": "/dev/ttyS0",
-}
-
-
 def main():
     try:
         loop = asyncio.get_event_loop()
@@ -79,17 +69,6 @@ class Ecl1102MQTT:
         parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
         parser.add_argument("--releaseName", type=str, dest="releaseName", help="Name of the current release")
         parser.add_argument("--configFile", type=str, dest="configFile", help="File where config is stored (JSON)")
-        parser.add_argument("--loglevel", type=str, dest="loglevel", help='Minimum log level, DEBUG/INFO/WARNING/ERROR/CRITICAL"', default=DEFAULT_ARGS["loglevel"])
-        parser.add_argument("--interval", type=float, dest="interval", help="Interval in seconds in which data is requested. Minimum: 1.0", default=DEFAULT_ARGS["interval"])
-
-        parser.add_argument("--mqtt-broker", type=str, dest="mqttbroker", help="Address of MQTT Broker to connect to")
-        parser.add_argument("--mqtt-port", type=int, dest="mqttport", help="Port of MQTT Broker. Default is 1883 (8883 for TLS)", default=DEFAULT_ARGS["mqttport"])
-        parser.add_argument("--mqtt-clientid", type=str, dest="mqttclientid", help="Id of the client. Default is a random id")
-        parser.add_argument("--mqtt-keepalive", type=int, dest="mqttkeepalive", help="Time between keep-alive messages", default=DEFAULT_ARGS["mqttkeepalive"])
-        parser.add_argument("--mqtt-username", type=str, dest="mqttusername", help="Username for MQTT broker")
-        parser.add_argument("--mqtt-password", type=str, dest="mqttpassword", help="Password for MQTT broker")
-
-        parser.add_argument("--modbus-port", type=str, dest="modbusport", help="Modbus serial port", default=DEFAULT_ARGS["modbusport"])
 
         args = parser.parse_args()
 
@@ -106,6 +85,9 @@ class Ecl1102MQTT:
             self.__add_from_config(args, config, "mqttusername")
             self.__add_from_config(args, config, "mqttpassword")
             self.__add_from_config(args, config, "modbusport")
+
+            self.__add_from_config(args, config, "num_tempsensors")
+            self.__add_from_config(args, config, "tempsensors")
 
         valid_loglevels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
         if args.loglevel not in valid_loglevels:
@@ -139,19 +121,23 @@ class Ecl1102MQTT:
             #self.mqtt.publish("ecl110/state", "Online")
 
 
-            self.bus = minimalmodbus.Instrument(args.modbusport, 5)
-            self.bus.serial.baudrate = 19200         # Baud
-            self.bus.serial.bytesize = 8
-            self.bus.serial.parity   = serial.PARITY_EVEN
-            self.bus.serial.stopbits = 1
-            self.bus.serial.timeout  = 0.05          # seconds
-
-            print(f"address={self.bus.address}")
-            print(f"mode={self.bus.mode}")
+            try:
+                self.bus = minimalmodbus.Instrument(args.modbusport, 5)
+                self.bus.serial.baudrate = 19200         # Baud
+                self.bus.serial.bytesize = 8
+                self.bus.serial.parity   = serial.PARITY_EVEN
+                self.bus.serial.stopbits = 1
+                self.bus.serial.timeout  = 0.05          # seconds
+                print(f"address={self.bus.address}")
+                print(f"mode={self.bus.mode}")
+            except:
+                LOGGER.error("Failed to find SERIAL PORT...no MODBUS AVAILABLE")
+                self.bus = None
 
             self.valvePosition = 0;
 
             last_data_json = ""
+            last_data_temp_json = ""
             last_cycle = 0.0
 
             while True:
@@ -163,7 +149,9 @@ class Ecl1102MQTT:
                     continue
 
                 try:
-
+                    #
+                    # MODBUS data reading
+                    #
                     self.lock.acquire()
                     try:
                         
@@ -250,17 +238,11 @@ class Ecl1102MQTT:
 
                         data_json = json.dumps(data)
                         if data_json != last_data_json:
-                            print(last_cycle)
-                            print(data)
+                            print("Publishing: ecl110/value =>" + str(data))
                             self.mqtt.publish("ecl110/value", data)
-
-                            # for key in data:
-                            #     topic = f"ecl110/{key}/value"
-                            #     value = data[key]
-                            #     print(f"mqtt: {topic} - {value}")
-                            #     self.mqtt.publish(topic, value)
-
                             last_data_json = data_json
+                    except:
+                        LOGGER.error("Could not use serial port for modbus")
                     finally:
                         self.lock.release()
 
@@ -268,6 +250,32 @@ class Ecl1102MQTT:
                     LOGGER.error("no response on ModBus")
                 except minimalmodbus.InvalidResponseError:
                     LOGGER.error("invalid response on ModBus")
+
+                #
+                # Extra tempsensor reading (one-wire sensors added to the PI as well...)
+                #
+                try:
+                    data_temp = {}
+                    for i in range(0, args.num_tempsensors):
+                        sensor = args.tempsensors[i]
+                        device_file = "/sys/bus/w1/devices/" + str(sensor['address']) + "/temperature"
+                        f = open(device_file, 'r')
+                        result = f.read()
+                        f.close()
+                        temp = float(result)/1000.0
+                        print("Temp-sensor reading-time: " + str(sensor['address']) + " => " + str(temp))
+                        data_temp[sensor['name']] = temp
+                        
+                    if args.num_tempsensors > 0:
+                        data_temp_json = json.dumps(data_temp)
+                        if data_temp_json != last_data_temp_json:
+                            print("Publishing: heating/value =>" + str(data_temp))
+                            self.mqtt.publish("heating/value", data_temp)
+                            last_data_temp_json = data_temp_json
+
+                except:
+                    LOGGER.error("could not read temp-sensors")
+
 
         except KeyboardInterrupt:
             pass  # do nothing, close requested

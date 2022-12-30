@@ -10,5 +10,11 @@
     "mqttusername": "mqtt",
     "mqttpassword": "mqtt",
 
-    "modbusport": "/dev/ttyUSB0"
+    "modbusport": "/dev/ttyUSB0",
+
+    "num_tempsensors": 3,
+    "tempsensors": [{ "address": "28-15a3571f64ff", "name": "heating_temperature_out"},
+                     { "address": "28-26be571f64ff", "name": "heating_temperature_in"},
+                     { "address": "28-95a3571f64ff", "name": "heating_temperature_extra"} ]
+
 }
