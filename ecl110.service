@@ -1,0 +1,11 @@
+[Unit]
+Description=ECL 110 Service
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/ecl110-to-mqtt
+ExecStart=/home/pi/ecl110-to-mqtt/run.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
