@@ -56,7 +56,7 @@ class Ecl1102MQTT:
                 "device_class": "temperature",
                 "availability": "ecl110/state"
             }
-            print(_config)
+            LOGGER.info(_config)
             self.mqtt.publish(
                 f"homeassistant/sensor/ecl110/{name}/config",
                 json.dumps(_config),
@@ -91,7 +91,7 @@ class Ecl1102MQTT:
 
         valid_loglevels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
         if args.loglevel not in valid_loglevels:
-            print(f'Invalid log level given: {args.loglevel}, allowed values: {", ".join(valid_loglevels)}')
+            LOGGER.info(f'Invalid log level given: {args.loglevel}, allowed values: {", ".join(valid_loglevels)}')
             return
 
         logging.basicConfig(level=args.loglevel)
@@ -128,8 +128,8 @@ class Ecl1102MQTT:
                 self.bus.serial.parity   = serial.PARITY_EVEN
                 self.bus.serial.stopbits = 1
                 self.bus.serial.timeout  = 0.05          # seconds
-                print(f"address={self.bus.address}")
-                print(f"mode={self.bus.mode}")
+                LOGGER.info(f"address={self.bus.address}")
+                LOGGER.info(f"mode={self.bus.mode}")
             except:
                 LOGGER.error("Failed to find SERIAL PORT...no MODBUS AVAILABLE")
                 self.bus = None
@@ -150,17 +150,18 @@ class Ecl1102MQTT:
                     LOGGER.error(f"mqtt not connected")
                     continue
 
-                if modbus_error_counter > 100:
-                    LOGGER.info("Restarting modbus driver")
-                    self.bus = minimalmodbus.Instrument(args.modbusport, 5)
-                    self.bus.serial.baudrate = 19200         # Baud
-                    self.bus.serial.bytesize = 8
-                    self.bus.serial.parity   = serial.PARITY_EVEN
-                    self.bus.serial.stopbits = 1
-                    self.bus.serial.timeout  = 0.05          # seconds
-                    LOGGER.info(f"address={self.bus.address}")
-                    LOGGER.info(f"mode={self.bus.mode}")
-                    modbus_error_counter = 0
+                if modbus_error_counter > 5:
+                    LOGGER.error("Restarting modbus driver")
+                    raise SystemExit
+                    # self.bus = minimalmodbus.Instrument(args.modbusport, 5)
+                    # self.bus.serial.baudrate = 19200         # Baud
+                    # self.bus.serial.bytesize = 8
+                    # self.bus.serial.parity   = serial.PARITY_EVEN
+                    # self.bus.serial.stopbits = 1
+                    # self.bus.serial.timeout  = 0.05          # seconds
+                    # LOGGER.error(f"address={self.bus.address}")
+                    # LOGGER.error(f"mode={self.bus.mode}")
+                    # modbus_error_counter = 0
 
 
                 try:
@@ -252,16 +253,18 @@ class Ecl1102MQTT:
                         data["valvePosition"] = self.valvePosition
 
                         data_json = json.dumps(data)
+                        LOGGER.debug("Got info on modbus")
+                        LOGGER.debug("=>" + str(data))
                         if data_json != last_data_json:
-                            print("Publishing: ecl110/value =>" + str(data))
+                            LOGGER.info("Publishing: ecl110/value")
                             self.mqtt.publish("ecl110/value", data)
                             last_data_json = data_json
 
                         modbus_error_counter = 0
                         
                     except:
-                        LOGGER.error("Could not use serial port for modbus")
                         modbus_error_counter = modbus_error_counter + 1
+                        LOGGER.debug("Could not use serial port for modbus: " + str(modbus_error_counter))
                     finally:
                         self.lock.release()
 
@@ -284,13 +287,13 @@ class Ecl1102MQTT:
                         result = f.read()
                         f.close()
                         temp = float(result)/1000.0
-                        print("Temp-sensor reading-time: " + str(sensor['address']) + " => " + str(temp))
+                        LOGGER.debug("Temp-sensor reading-time: " + str(sensor['address']) + " => " + str(temp))
                         data_temp[sensor['name']] = temp
                         
                     if args.num_tempsensors > 0:
                         data_temp_json = json.dumps(data_temp)
                         if data_temp_json != last_data_temp_json:
-                            print("Publishing: heating/value =>" + str(data_temp))
+                            LOGGER.debug("Publishing: heating/value =>" + str(data_temp))
                             self.mqtt.publish("heating/value", data_temp)
                             last_data_temp_json = data_temp_json
 
@@ -319,7 +322,7 @@ class Ecl1102MQTT:
             LOGGER.error('no value for "value" provided')
             return
 
-        print(f"REQ WRITE: {address} = {value}")
+        LOGGER.info(f"REQ WRITE: {address} = {value}")
         self.lock.acquire()
         try:
             self.bus.write_register(address, value, functioncode=6, signed=True)
@@ -347,7 +350,7 @@ class Ecl1102MQTT:
         finally:
             self.lock.release()
 
-        print(f"REQ READ: {address} = {value}")
+        LOGGER.info(f"REQ READ: {address} = {value}")
         self.mqtt.publish(f"ecl110/register/{address}", value)
 
     def __on_set_mode(self, client, userdata, msg):
