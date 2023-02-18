@@ -140,6 +140,8 @@ class Ecl1102MQTT:
             last_data_temp_json = ""
             last_cycle = 0.0
 
+            modbus_error_counter = 0
+
             while True:
                 await asyncio.sleep(max(0, args.interval - (time.time() - last_cycle)))
                 last_cycle = time.time()
@@ -147,6 +149,19 @@ class Ecl1102MQTT:
                 if not self.mqtt.is_connected:
                     LOGGER.error(f"mqtt not connected")
                     continue
+
+                if modbus_error_counter > 100:
+                    LOGGER.info("Restarting modbus driver")
+                    self.bus = minimalmodbus.Instrument(args.modbusport, 5)
+                    self.bus.serial.baudrate = 19200         # Baud
+                    self.bus.serial.bytesize = 8
+                    self.bus.serial.parity   = serial.PARITY_EVEN
+                    self.bus.serial.stopbits = 1
+                    self.bus.serial.timeout  = 0.05          # seconds
+                    LOGGER.info(f"address={self.bus.address}")
+                    LOGGER.info(f"mode={self.bus.mode}")
+                    modbus_error_counter = 0
+
 
                 try:
                     #
@@ -241,15 +256,21 @@ class Ecl1102MQTT:
                             print("Publishing: ecl110/value =>" + str(data))
                             self.mqtt.publish("ecl110/value", data)
                             last_data_json = data_json
+
+                        modbus_error_counter = 0
+                        
                     except:
                         LOGGER.error("Could not use serial port for modbus")
+                        modbus_error_counter = modbus_error_counter + 1
                     finally:
                         self.lock.release()
 
                 except minimalmodbus.NoResponseError:
                     LOGGER.error("no response on ModBus")
+                    modbus_error_counter = modbus_error_counter + 1
                 except minimalmodbus.InvalidResponseError:
                     LOGGER.error("invalid response on ModBus")
+                    modbus_error_counter = modbus_error_counter + 1
 
                 #
                 # Extra tempsensor reading (one-wire sensors added to the PI as well...)
