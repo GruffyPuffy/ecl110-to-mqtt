@@ -127,7 +127,7 @@ class Ecl1102MQTT:
                 self.bus.serial.bytesize = 8
                 self.bus.serial.parity   = serial.PARITY_EVEN
                 self.bus.serial.stopbits = 1
-                self.bus.serial.timeout  = 0.05          # seconds
+                self.bus.serial.timeout  = 0.205          # seconds
                 LOGGER.info(f"address={self.bus.address}")
                 LOGGER.info(f"mode={self.bus.mode}")
             except:
@@ -256,7 +256,7 @@ class Ecl1102MQTT:
                         LOGGER.debug("Got info on modbus")
                         LOGGER.debug("=>" + str(data))
                         if data_json != last_data_json:
-                            LOGGER.info("Publishing: ecl110/value")
+                            LOGGER.debug("Publishing: ecl110/value")
                             self.mqtt.publish("ecl110/value", data)
                             last_data_json = data_json
 
